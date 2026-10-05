@@ -25,9 +25,21 @@ FASE 2 - modelo con recursos, 5 variables (se agregan agua y nutrientes):
     dN/dt = SN + rho*(a*P*H + b*H*C + mP*P + mH*H + mC*C) - uN*P*fN - lN*N
 
 En la Fase 2 las plantas dependen de los recursos, y los recursos dependen de
-las plantas. La temperatura se agregará en la Fase 3.
+las plantas.
+
+FASE 3 - clima con estaciones (mismas 5 variables, ahora con tiempo explícito):
+
+    T(t)  = T0 + AT * sin(2*pi*t/12 + phiT) + (perturbación)    temperatura (°C)
+    R(t)  = R0 * (1 + AR * sin(2*pi*t/12 + phiR)) * (sequía)    lluvia
+    fT(T) = exp( -(T - Topt)^2 / (2*sigmaT^2) )                 efecto de la temperatura
+
+    dP/dt = rP * P * (1 - P/KP) * fW * fN * fT - a*P*H - mP*P
+
+El resto de las ecuaciones es igual al de la Fase 2, pero con la lluvia R(t).
+El tiempo se mide en meses y el año tiene 12, así que el clima se repite cada 12.
 """
 
+import math
 from dataclasses import dataclass
 from typing import Callable, Optional
 
@@ -124,14 +136,20 @@ class ParametrosCompleto(Parametros):
     factor_lluvia: Optional[Callable[[float], float]] = None
 
 
-def _lado_derecho(y, p, factor):
-    """Ecuaciones del modelo con recursos, con el factor de lluvia ya calculado."""
+def _lado_derecho(y, p, factor, fT=1.0):
+    """
+    Ecuaciones del modelo con recursos.
+
+    factor : multiplicador de la lluvia ya calculado (lluvia = R0 * factor)
+    fT     : efecto de la temperatura sobre el crecimiento (1 = sin efecto,
+             que es lo que usa la Fase 2)
+    """
     P, H, C, W, N = y
 
     fW = W / (p.KW + W)   # entre 0 (sin agua) y 1 (agua de sobra)
     fN = N / (p.KN + N)   # entre 0 (sin nutrientes) y 1 (nutrientes de sobra)
 
-    dP = p.rP * P * (1 - P / p.KP) * fW * fN - p.a * P * H - p.mP * P
+    dP = p.rP * P * (1 - P / p.KP) * fW * fN * fT - p.a * P * H - p.mP * P
     dH = p.eH * p.a * P * H - p.b * H * C - p.mH * H
     dC = p.eC * p.b * H * C - p.mC * C
 
@@ -169,3 +187,73 @@ def equilibrio_completo(p, y_inicial=(50.0, 10.0, 5.0, 30.0, 30.0)):
         return _lado_derecho(y, p, 1.0)
 
     return fsolve(f, y_inicial, xtol=1e-12)
+
+
+# ===========================================================================
+# FASE 3: clima con estaciones (temperatura y lluvia que cambian en el tiempo)
+# ===========================================================================
+
+@dataclass
+class ParametrosClima(ParametrosCompleto):
+    """
+    Parámetros del modelo con clima. Hereda todos los de la Fase 2 y agrega
+    los de la temperatura y la lluvia estacional.
+    """
+
+    # La tasa de crecimiento sube un poco respecto a la Fase 2, porque ahora
+    # la temperatura (fT < 1 casi todo el año) frena el crecimiento.
+    rP: float = 1.0
+
+    # --- Temperatura ---
+    T0: float = 25.0      # temperatura media anual (°C)
+    AT: float = 5.0       # amplitud de la variación estacional (°C)
+    phiT: float = 0.0     # desfase de la temperatura (radianes)
+    Topt: float = 25.0    # temperatura óptima para las plantas (°C)
+    sigmaT: float = 6.0   # tolerancia: qué tan rápido cae fT al alejarse de Topt
+
+    # --- Lluvia estacional ---
+    AR: float = 0.6       # amplitud de la variación de lluvia (0 = lluvia constante)
+    phiR: float = -math.pi / 3   # desfase de la lluvia: llega ~2 meses después del pico de calor
+
+    # --- Perturbación opcional de temperatura (ola de calor) ---
+    # Función delta_temperatura(t) que devuelve los °C que se SUMAN a la
+    # temperatura normal en el mes t. Si es None, no hay perturbación.
+    delta_temperatura: Optional[Callable[[float], float]] = None
+    # (también se hereda factor_lluvia, para provocar sequías sobre las estaciones)
+
+
+def temperatura(t, p):
+    """Temperatura (°C) en el mes t, incluyendo la ola de calor si existe."""
+    T = p.T0 + p.AT * math.sin(2 * math.pi * t / 12 + p.phiT)
+    if p.delta_temperatura is not None:
+        T += p.delta_temperatura(t)
+    return T
+
+
+def lluvia(t, p):
+    """Lluvia R(t) en el mes t, incluyendo la sequía si existe."""
+    R = p.R0 * (1 + p.AR * math.sin(2 * math.pi * t / 12 + p.phiR))
+    if p.factor_lluvia is not None:
+        R *= p.factor_lluvia(t)
+    return R
+
+
+def f_temperatura(T, p):
+    """
+    Efecto de la temperatura sobre el crecimiento de las plantas:
+    vale 1 en la temperatura óptima y tiende a 0 al alejarse de ella.
+    """
+    return math.exp(-((T - p.Topt) ** 2) / (2 * p.sigmaT ** 2))
+
+
+def derivadas_clima(t, y, p):
+    """
+    Lado derecho del modelo con clima: devuelve [dP/dt, dH/dt, dC/dt, dW/dt, dN/dt].
+
+    t : tiempo en meses (aquí sí importa: el clima depende de t)
+    y : [P, H, C, W, N]
+    p : objeto ParametrosClima
+    """
+    factor = lluvia(t, p) / p.R0
+    fT = f_temperatura(temperatura(t, p), p)
+    return _lado_derecho(y, p, factor, fT)
