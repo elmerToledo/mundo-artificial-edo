@@ -82,7 +82,19 @@ mundo-artificial-edo/
 │   ├── fase3_clima.py             estaciones y ola de calor
 │   ├── fase5_experimentos.py      sin depredadores y mapa de sequías
 │   ├── fase5_calentamiento.py     calentamiento sostenido
-│   └── fase6_barrido.py           mapa lluvia x temperatura
+│   ├── fase6_barrido.py           mapa lluvia x temperatura
+│   ├── fase7_mundo.py             abre el mundo visual (Pygame)
+│   └── mundo/                     el mundo visual, dividido por responsabilidades
+│       ├── config.py              constantes: tamaños, colores, escalas
+│       ├── escenarios.py          sequía, calor y extinción como funciones del tiempo
+│       ├── simulacion.py          avanza las ecuaciones paso a paso (sin Pygame)
+│       ├── entidades.py           plantas y animales que se mueven (sin Pygame)
+│       ├── mundo.py               cantidad de seres según el modelo, capturas, nacimientos
+│       ├── dibujo.py              dibuja el paisaje
+│       ├── graficas.py            gráfica en vivo
+│       ├── interfaz.py            botones y panel de datos
+│       └── main.py                ventana y bucle principal
+├── docs/                          capturas de pantalla
 └── resultados/                    gráficas generadas por los scripts
 ```
 
@@ -98,7 +110,10 @@ python src/fase3_clima.py
 python src/fase5_experimentos.py
 python src/fase5_calentamiento.py
 python src/fase6_barrido.py
+python src/fase7_mundo.py
 ```
+
+Los scripts de las fases 1 a 6 solo necesitan numpy, scipy y matplotlib. El mundo visual (`fase7_mundo.py`) además necesita `pygame`, que ya está en `requirements.txt`.
 
 Cada script imprime sus resultados en la terminal y guarda las gráficas en `resultados/`. Ejecútalos desde la carpeta principal del proyecto.
 
@@ -144,6 +159,29 @@ Barrido de 252 climas (12 valores de lluvia por 21 de temperatura, 60 años cada
 
 ![Población media por clima](resultados/fase6_mapa_poblaciones.png)
 
+### Fase 7: el mundo visual
+
+`python src/fase7_mundo.py` abre una ventana donde el ecosistema se resuelve en tiempo real. Los botones aplican las perturbaciones de las fases anteriores:
+
+| Tecla | Acción |
+| --- | --- |
+| `1` | Normal: termina la sequía o el calor que estén en curso |
+| `2` | Sequía: la lluvia baja al 20% durante 50 meses |
+| `3` | Ola de calor: +8 °C durante 12 meses |
+| `4` | Extinción: se eliminan todos los depredadores |
+| `R` | Reiniciar |
+| `Espacio` | Pausa |
+| `↑` `↓` | Más rápido o más lento |
+
+![El mundo artificial](docs/captura_mundo.png)
+
+Cómo se conecta el dibujo con las ecuaciones:
+
+- **La cantidad de plantas, herbívoros y depredadores que se ven es la que da el modelo.** Los botones no tocan las poblaciones: solo cambian la lluvia o la temperatura que entran a las ecuaciones.
+- **Las capturas y los nacimientos siguen las tasas de la ecuación de los herbívoros.** Un depredador solo captura a un herbívoro cuando lo alcanza y la tasa de depredación $bHC$ lo permite; los nacimientos siguen a $e_H a P H$. Sin depredadores no hay capturas.
+- **Lo que se anima es una muestra.** En el mundo normal la ecuación pide muchas más capturas por segundo de las que se pueden mostrar; el dibujo anima algunas, pero los totales son los del modelo.
+- El suelo se seca según el agua, el lago se encoge y el velo rojo aparece según la temperatura.
+
 ## Limitaciones
 
 - **Parámetros ficticios.** Los valores no provienen de un ecosistema real; los resultados describen el comportamiento cualitativo del modelo.
@@ -159,7 +197,7 @@ Barrido de 252 climas (12 valores de lluvia por 21 de temperatura, 60 años cada
 - [x] Fase 4: comparación Euler y RK4 (dentro de `fase1_minimo.py`)
 - [x] Fase 5: experimentos de perturbación
 - [x] Fase 6: barrido de parámetros
-- [ ] Fase 7: mundo visual interactivo (Pygame)
+- [x] Fase 7: mundo visual interactivo (Pygame)
 - [ ] Fase 8: demostración en vivo
 
 ## Autor
